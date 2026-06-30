@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { POINTS, TRANSACTION_TYPES, isWatchEligible } from '@/lib/points';
+import { calculateWatchReward, TRANSACTION_TYPES, isWatchEligible } from '@/lib/points';
 
 export async function POST(
   req: NextRequest,
@@ -62,16 +62,18 @@ export async function POST(
 
     const eligible = isWatchEligible(watchedSeconds, totalSeconds || video.durationSeconds);
 
-    let rewarded = false;
-
     if (eligible && !existingSession?.rewarded) {
+      // Video süresine göre dinamik ödül hesapla
+      const effectiveDuration = totalSeconds || video.durationSeconds;
+      const pointsEarned = calculateWatchReward(effectiveDuration);
+
       // Puan ver + seans güncelle — transaction
       await prisma.$transaction(async (tx) => {
         await tx.watchSession.upsert({
           where: { userId_videoId: { userId: session.user.id, videoId } },
           update: {
             watchedSeconds,
-            totalSeconds: totalSeconds || video.durationSeconds,
+            totalSeconds: effectiveDuration,
             rewarded: true,
             completedAt: new Date(),
           },
@@ -79,7 +81,7 @@ export async function POST(
             userId: session.user.id,
             videoId,
             watchedSeconds,
-            totalSeconds: totalSeconds || video.durationSeconds,
+            totalSeconds: effectiveDuration,
             rewarded: true,
             completedAt: new Date(),
           },
@@ -87,15 +89,15 @@ export async function POST(
 
         await tx.user.update({
           where: { id: session.user.id },
-          data: { points: { increment: POINTS.WATCH_REWARD } },
+          data: { points: { increment: pointsEarned } },
         });
 
         await tx.pointTransaction.create({
           data: {
             userId: session.user.id,
-            amount: POINTS.WATCH_REWARD,
+            amount: pointsEarned,
             type: TRANSACTION_TYPES.WATCH_REWARD,
-            description: `"${video.title}" videosu izlendi`,
+            description: `"${video.title}" videosu izlendi (+${pointsEarned} puan)`,
           },
         });
 
@@ -106,7 +108,12 @@ export async function POST(
         });
       });
 
-      rewarded = true;
+      return NextResponse.json({
+        success: true,
+        rewarded: true,
+        pointsEarned,
+        thresholdPercent: 70,
+      });
     } else {
       // Sadece seans ilerlemesini güncelle (puan vermeden)
       await prisma.watchSession.upsert({
@@ -127,9 +134,9 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      rewarded,
-      pointsEarned: rewarded ? POINTS.WATCH_REWARD : 0,
-      thresholdPercent: POINTS.WATCH_THRESHOLD_PERCENT,
+      rewarded: false,
+      pointsEarned: 0,
+      thresholdPercent: 70,
     });
   } catch (err) {
     console.error('[POST /api/videos/[id]/watch]', err);

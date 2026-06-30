@@ -50,8 +50,9 @@ export default function VideoPlayer({
         if (data.rewarded && !rewardedRef.current) {
           rewardedRef.current = true;
           setRewarded(true);
-          setRewardMessage(`+${POINTS.WATCH_REWARD} puan kazandınız! 🎉`);
-          onRewarded?.(POINTS.WATCH_REWARD);
+          const earned: number = data.pointsEarned ?? POINTS.WATCH_REWARD;
+          setRewardMessage(`+${earned} puan kazandınız! 🎉`);
+          onRewarded?.(earned);
         }
       } catch {
         // sessizce devam et
@@ -99,7 +100,7 @@ export default function VideoPlayer({
 
       playerRef.current = new win.YT.Player(containerRef.current, {
         videoId,
-        playerVars: { rel: 0, modestbranding: 1, enablejsapi: 1 },
+        playerVars: { rel: 0, modestbranding: 1, enablejsapi: 1, autoplay: 1 },
         events: {
           onStateChange: (event: { data: number }) => {
             const PLAYING = 1;

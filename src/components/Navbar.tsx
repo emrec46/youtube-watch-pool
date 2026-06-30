@@ -8,13 +8,14 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
-import { Play, Trophy, PlusCircle, LayoutDashboard, LogOut } from 'lucide-react';
+import { Play, Trophy, PlusCircle, LayoutDashboard, LogOut, Medal } from 'lucide-react';
 import { usePoints } from '@/hooks/usePoints';
 
 const navLinks = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/pool', label: 'Havuz', icon: Play },
   { href: '/submit', label: 'Video Ekle', icon: PlusCircle },
+  { href: '/leaderboard', label: 'Sıralama', icon: Medal },
 ];
 
 export default function Navbar() {

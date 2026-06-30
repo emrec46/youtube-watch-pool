@@ -8,7 +8,10 @@ export const POINTS = {
   /** Yeni kullanıcı kayıt bonusu */
   REGISTER_BONUS: 100,
 
-  /** Bir videoyu izleyince kazanılan puan */
+  /**
+   * Sabit ödül (artık kullanılmıyor — calculateWatchReward() ile hesaplanıyor).
+   * Geriye dönük uyumluluk için bırakıldı.
+   */
   WATCH_REWARD: 10,
 
   /** Kendi videonu havuza eklemek için gereken puan */
@@ -16,6 +19,15 @@ export const POINTS = {
 
   /** İzleme tamamlanmış sayılması için gereken minimum yüzde */
   WATCH_THRESHOLD_PERCENT: 70,
+
+  /** Dakika başı kazanılan puan (süreye göre dinamik hesap için) */
+  POINTS_PER_MINUTE: 60,
+
+  /** Minimum izleme ödülü (saniyeler ne kadar kısa olursa olsun) */
+  MIN_WATCH_REWARD: 20,
+
+  /** Maksimum izleme ödülü (çok uzun videolar için tavan) */
+  MAX_WATCH_REWARD: 600,
 } as const;
 
 // ─── İşlem Tipi Sabitleri ─────────────────────────────────────
@@ -26,6 +38,24 @@ export const TRANSACTION_TYPES = {
 } as const;
 
 export type TransactionType = (typeof TRANSACTION_TYPES)[keyof typeof TRANSACTION_TYPES];
+
+/**
+ * Video süresine göre dinamik izleme ödülü hesaplar.
+ * Formül: dakika * POINTS_PER_MINUTE, min/max arasında sınırlandırılır.
+ *
+ * Örnekler:
+ *   10 sn  → 20 puan (minimum)
+ *   1 dk   → 60 puan
+ *   5 dk   → 300 puan
+ *   10 dk  → 600 puan
+ *   30 dk  → 600 puan (maksimum)
+ */
+export function calculateWatchReward(durationSeconds: number): number {
+  if (durationSeconds <= 0) return POINTS.MIN_WATCH_REWARD;
+  const minutes = durationSeconds / 60;
+  const raw = Math.round(minutes * POINTS.POINTS_PER_MINUTE);
+  return Math.max(POINTS.MIN_WATCH_REWARD, Math.min(POINTS.MAX_WATCH_REWARD, raw));
+}
 
 /**
  * İzleme yüzdesine göre puan kazanılıp kazanılamayacağını kontrol eder.

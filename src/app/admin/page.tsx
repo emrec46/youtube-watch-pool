@@ -318,6 +318,7 @@ export default function AdminPage() {
                     <tr key={video.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={`https://img.youtube.com/vi/${video.youtubeId}/default.jpg`}
                             alt=""
