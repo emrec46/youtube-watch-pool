@@ -15,6 +15,7 @@ interface VideoPlayerProps {
   dbVideoId: string;
   alreadyRewarded?: boolean;
   onRewarded?: (points: number) => void;
+  onEnded?: () => void;
 }
 
 // YT global tipi — @types/youtube kurulduktan sonra window.YT olarak erişilir
@@ -26,6 +27,7 @@ export default function VideoPlayer({
   dbVideoId,
   alreadyRewarded = false,
   onRewarded,
+  onEnded,
 }: VideoPlayerProps) {
   const playerRef = useRef<YTPlayer>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -85,6 +87,9 @@ export default function VideoPlayer({
     }, 5000);
   }, [sendWatchProgress, stopTracking]);
 
+  const onEndedRef = useRef(onEnded);
+  useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
+
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const win = window as any;
@@ -102,8 +107,11 @@ export default function VideoPlayer({
             const ENDED = 0;
             if (event.data === PLAYING) {
               startTracking();
-            } else if (event.data === PAUSED || event.data === ENDED) {
+            } else if (event.data === PAUSED) {
               stopTracking();
+            } else if (event.data === ENDED) {
+              stopTracking();
+              onEndedRef.current?.();
             }
           },
         },

@@ -207,6 +207,7 @@ export default function PoolPage() {
           dbVideoId={selected.id}
           alreadyRewarded={alreadyRewarded}
           onRewarded={handleRewarded}
+          onEnded={autoPlay ? () => startAutoPlayCountdown(selected.id) : undefined}
         />
 
         {/* Otomatik geçiş countdown */}
