@@ -2,13 +2,14 @@
  * page.tsx — /pool
  * İzlenebilir videolar havuzu.
  * Kullanıcı bir video seçer, embed player ile izler, %70'de puan kazanır.
+ * "Otomatik İzle" modu: puan kazanılınca veya video bitince sıradaki video otomatik oynatılır.
  */
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import VideoPlayer from '@/components/VideoPlayer';
-import { Play, Trophy, Eye, Search, Loader2, RefreshCw, ChevronLeft } from 'lucide-react';
+import { Play, Trophy, Eye, Search, Loader2, RefreshCw, ChevronLeft, Zap, SkipForward } from 'lucide-react';
 import { usePoints } from '@/hooks/usePoints';
 import { POINTS } from '@/lib/points';
 
@@ -40,6 +41,9 @@ export default function PoolPage() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Video | null>(null);
   const [search, setSearch] = useState('');
+  const [autoPlay, setAutoPlay] = useState(false);
+  const [autoPlayCountdown, setAutoPlayCountdown] = useState<number | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchVideos = useCallback(async () => {
     setLoading(true);
@@ -58,15 +62,70 @@ export default function PoolPage() {
     fetchVideos();
   }, [fetchVideos]);
 
+  // Otomatik oynatma kapatılınca countdown'ı iptal et
+  useEffect(() => {
+    if (!autoPlay && countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+      setAutoPlayCountdown(null);
+    }
+  }, [autoPlay]);
+
+  // Bileşen unmount olunca interval temizle
+  useEffect(() => {
+    return () => {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, []);
+
   const filtered = videos.filter((v) =>
     v.title.toLowerCase().includes(search.toLowerCase()) ||
     v.owner.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleRewarded = async () => {
+  // Sıradaki izlenmemiş videoyu bul
+  const getNextVideo = useCallback((currentId: string, videoList: Video[]) => {
+    const currentIndex = videoList.findIndex(v => v.id === currentId);
+    // Önce izlenmemişleri sırala
+    const unwatched = videoList.filter((v, i) => {
+      const rewarded = v.watchSessions?.[0]?.rewarded ?? false;
+      return !rewarded && i !== currentIndex;
+    });
+    if (unwatched.length > 0) return unwatched[0];
+    // Tümü izlenmişse sıradakine geç
+    const nextIndex = (currentIndex + 1) % videoList.length;
+    return videoList[nextIndex] || null;
+  }, []);
+
+  // Sıradaki videoya geç
+  const goToNext = useCallback((currentId: string) => {
+    const next = getNextVideo(currentId, videos);
+    if (next) setSelected(next);
+  }, [getNextVideo, videos]);
+
+  // Otomatik geçiş başlat (3 sn countdown)
+  const startAutoPlayCountdown = useCallback((currentId: string) => {
+    if (!autoPlay) return;
+    if (countdownRef.current) clearInterval(countdownRef.current);
+
+    setAutoPlayCountdown(3);
+    let count = 3;
+    countdownRef.current = setInterval(() => {
+      count -= 1;
+      setAutoPlayCountdown(count);
+      if (count <= 0) {
+        clearInterval(countdownRef.current!);
+        countdownRef.current = null;
+        setAutoPlayCountdown(null);
+        goToNext(currentId);
+      }
+    }, 1000);
+  }, [autoPlay, goToNext]);
+
+  const handleRewarded = useCallback(async () => {
     await refetchPoints();
-    // Seçili videonun durumunu güncelle
     if (selected) {
+      // Seçili videonun durumunu güncelle
       setVideos((prev) =>
         prev.map((v) =>
           v.id === selected.id
@@ -74,23 +133,65 @@ export default function PoolPage() {
             : v
         )
       );
+      // Otomatik modda sıradakine geç
+      if (autoPlay) {
+        startAutoPlayCountdown(selected.id);
+      }
     }
-  };
+  }, [selected, autoPlay, startAutoPlayCountdown, refetchPoints]);
+
+  // Countdown iptal
+  const cancelCountdown = useCallback(() => {
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+    setAutoPlayCountdown(null);
+  }, []);
 
   // Video seçilmişse player ekranını göster
   if (selected) {
     const alreadyRewarded = selected.watchSessions?.[0]?.rewarded ?? false;
+    const nextVideo = getNextVideo(selected.id, videos);
 
     return (
       <div className="space-y-6 max-w-3xl mx-auto">
-        {/* Geri Butonu */}
-        <button
-          onClick={() => setSelected(null)}
-          className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors text-sm"
-        >
-          <ChevronLeft className="w-4 h-4" />
-          Havuza Dön
-        </button>
+        {/* Üst bar */}
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => { cancelCountdown(); setSelected(null); }}
+            className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors text-sm"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            Havuza Dön
+          </button>
+
+          <div className="flex items-center gap-3">
+            {/* Otomatik İzle toggle */}
+            <button
+              onClick={() => { cancelCountdown(); setAutoPlay(p => !p); }}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${
+                autoPlay
+                  ? 'bg-green-900/50 border-green-600 text-green-300'
+                  : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
+              }`}
+            >
+              <Zap className={`w-3.5 h-3.5 ${autoPlay ? 'text-green-400' : ''}`} />
+              {autoPlay ? 'Otomatik: Açık' : 'Otomatik İzle'}
+            </button>
+
+            {/* Manuel sonraki */}
+            {nextVideo && (
+              <button
+                onClick={() => { cancelCountdown(); goToNext(selected.id); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-800 border border-gray-700 text-gray-400 hover:text-white transition-colors"
+              >
+                <SkipForward className="w-3.5 h-3.5" />
+                Sonraki
+              </button>
+            )}
+          </div>
+        </div>
 
         {/* Video Başlığı */}
         <div>
@@ -107,6 +208,43 @@ export default function PoolPage() {
           alreadyRewarded={alreadyRewarded}
           onRewarded={handleRewarded}
         />
+
+        {/* Otomatik geçiş countdown */}
+        {autoPlayCountdown !== null && (
+          <div className="flex items-center justify-between bg-green-900/20 border border-green-700/50 rounded-xl px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-green-400" />
+              <span className="text-green-300 text-sm">
+                Sıradaki video {autoPlayCountdown} saniye içinde başlıyor...
+              </span>
+            </div>
+            <button
+              onClick={cancelCountdown}
+              className="text-gray-500 hover:text-white text-xs transition-colors"
+            >
+              İptal
+            </button>
+          </div>
+        )}
+
+        {/* Sonraki Video Önizleme */}
+        {nextVideo && autoPlay && autoPlayCountdown === null && (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 flex items-center gap-3">
+            <div className="flex-shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={nextVideo.thumbnailUrl || `https://img.youtube.com/vi/${nextVideo.youtubeId}/default.jpg`}
+                alt=""
+                className="w-20 h-14 object-cover rounded-lg"
+              />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-gray-500 mb-0.5">Sıradaki</p>
+              <p className="text-white text-sm font-medium line-clamp-1">{nextVideo.title}</p>
+              <p className="text-gray-500 text-xs">{nextVideo.owner.name}</p>
+            </div>
+          </div>
+        )}
 
         {/* Video Açıklaması */}
         {selected.description && (
@@ -136,7 +274,7 @@ export default function PoolPage() {
         </div>
       </div>
 
-      {/* Arama + Yenile */}
+      {/* Arama + Otomatik İzle + Yenile */}
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
@@ -148,6 +286,21 @@ export default function PoolPage() {
             className="w-full bg-gray-900 border border-gray-800 rounded-xl pl-9 pr-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 text-sm"
           />
         </div>
+
+        {/* Otomatik İzleme Modu Butonu */}
+        {filtered.length > 0 && (
+          <button
+            onClick={() => {
+              setAutoPlay(true);
+              setSelected(filtered[0]);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-green-700 hover:bg-green-600 rounded-xl text-sm font-medium text-white transition-colors whitespace-nowrap"
+          >
+            <Zap className="w-4 h-4" />
+            Otomatik İzle
+          </button>
+        )}
+
         <button
           onClick={fetchVideos}
           disabled={loading}
